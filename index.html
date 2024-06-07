@@ -1,1 +1,196 @@
-Hello World
+<html>
+<head>
+
+<script src="rtws.js"></script>
+<script src="amf0.js"></script>
+<script src="tcmessage.js"></script>
+<script src="tcconn.js"></script>
+<script src="tcaudio.js"></script>
+<script src="tcmedia.js"></script>
+
+<script>
+
+var connection;
+var channelStream;
+var mediaDecoder;
+
+function onResize() {
+	video.width = Math.floor(video.parentElement.clientWidth);
+	video.height = Math.floor(video.parentElement.clientHeight);
+}
+
+function doPlay(mode) {
+	const streamName = stream_name_override.value || stream_name_override.placeholder;
+
+	if(channelStream && streamName)
+	{
+		let tcserverExtras = "";
+
+		if("vod" == mode)
+		{
+			mediaDecoder.audioFrameSkipThresh = 100;
+			mediaDecoder.audioController.bufferTime = 0.50;
+			mediaDecoder.audioController.resetMinimumBufferLength(120);
+
+			if(checkbox_tcserver.checked)
+				tcserverExtras = "?audioLifetime=3&previousGopStartByMargin=0.1&finishByMargin=3";
+		}
+		else
+		{
+			mediaDecoder.audioFrameSkipThresh = 20;
+			mediaDecoder.audioController.bufferTime = 0.0;
+			mediaDecoder.audioController.resetMinimumBufferLength(16);
+
+			if(checkbox_tcserver.checked)
+				tcserverExtras = "?audioLifetime=0.25&previousGopStartBy=0.1&finishByMargin=0.5";
+		}
+
+		console.log('NetStream.play("' + streamName + tcserverExtras + '")');
+		channelStream.play(streamName + tcserverExtras);
+	}
+}
+
+function doCloseStream() {
+	channelStream?.closeStream();
+	mediaDecoder?.audioFlush();
+}
+
+function onDisconnected(e) {
+	if(e)
+		console.log("onDisconnected", e);
+
+	connection?.close();
+
+	connection = null;
+	channelStream = null;
+
+	button_disconnect.disabled = true;
+	button_connect.disabled = false;
+	server_uri.disabled = false;
+	tcurl_override.disabled = false;
+	app_override.disabled = false;
+	button_play.disabled = true;
+	button_play_vod.disabled = true;
+	button_closestream.disabled = true;
+
+	mediaDecoder?.close();
+	mediaDecoder = null;
+}
+
+async function onConnected(info) {
+	channelStream = await connection.createStream();
+	channelStream.client.onMetaData = function(...args) { console.log("onMetaData", ...args); };
+	mediaDecoder = new com_zenomt_TCMediaDecoder(channelStream);
+	mediaDecoder.drawFramesToCanvas(video);
+	mediaDecoder.audioController.onstatus = (e) => console.log("audioController.onstatus", e.detail, e);
+
+	button_play.disabled = false;
+	button_play_vod.disabled = false;
+	button_closestream.disabled = false;
+}
+
+function doConnect() {
+	if(!server_uri.value)
+		return;
+
+	button_connect.disabled = true;
+	button_disconnect.disabled = false;
+	server_uri.disabled = true;
+	tcurl_override.disabled = true;
+	app_override.disabled = true;
+
+	connection = new com_zenomt_TCConnection();
+	connection.onclose = onDisconnected;
+	connection.connect(server_uri.value, {
+			tcUrl:tcurl_override.value || undefined,
+			app:app_override.value || undefined,
+			videoCodecs:(1 << com_zenomt_TCMessage.TC_VIDEO_CODEC_AVC),
+			audioCodecs:0xffff, // cheat and say all of them
+			fourCcList:["av01", "vp09", "hvc1"], // Enhanced RTMP
+		}).then(onConnected).catch(onDisconnected);
+}
+
+function doDisconnect() {
+	if(connection)
+		connection.close();
+	else
+		onDisconnected();
+}
+
+function populateOverrides() {
+	const uri = com_zenomt_TCConnection.URIParse(server_uri.value);
+	tcurl_override.placeholder = uri.publicUri;
+	app_override.placeholder = com_zenomt_TCConnection.appFromTcUrl(tcurl_override.value || server_uri.value);
+	stream_name_override.placeholder = com_zenomt_TCConnection.safeDecodeURIComponent(uri.fragment) || "live";
+}
+
+function displayStats() {
+	const ctx = stats.getContext('2d');
+	ctx.font = "14px monaco, monospace";
+	ctx.fillStyle = "hsl(120, 100%, 60%)";
+	ctx.clearRect(0, 0, stats.width, stats.height);
+	var vcursor = 20;
+	const vstep = 18;
+	var minBuffer = mediaDecoder?.audioController.audioSourceNode?.minimumBufferLength || 0;
+	var maxBuffer = mediaDecoder?.audioController.audioSourceNode?.maximumBufferLength || 0;
+	ctx.fillText("Time:    " + (mediaDecoder?.audioController.currentTime.toFixed(2) || "0.00"), 10, vcursor); vcursor += vstep;
+	ctx.fillText("Buffer:  " + (mediaDecoder?.audioController.bufferLength.toFixed(3) || "0.000"), 10, vcursor); vcursor += vstep;
+	ctx.fillText("Minimum: " + minBuffer.toFixed(3), 10, vcursor); vcursor += vstep;
+	ctx.fillText("Maximum: " + maxBuffer.toFixed(3), 10, vcursor); vcursor += vstep;
+	ctx.fillText("Jitter:  " + (maxBuffer - minBuffer).toFixed(3), 10, vcursor); vcursor += vstep;
+}
+
+function onLoaded() {
+	window.addEventListener("resize", onResize);
+	onDisconnected();
+	onResize();
+
+	server_uri.onchange = server_uri.oninput = tcurl_override.onchange = tcurl_override.oninput = populateOverrides;
+	populateOverrides();
+
+	// in case we're being relayed through rtmfp, try to hasten switch to new address
+	navigator.connection?.addEventListener("change", () => { try { connection?.command("ping"); } catch(_) {} });
+
+	setInterval(displayStats, 125);
+}
+
+</script>
+
+<title>Play Stream Demo</title>
+</head>
+
+<body onload="onLoaded()" style="display: grid; grid-template-rows: auto 1fr;">
+
+<div>
+	<h1>Play Stream Demo</h1>
+	<table cellpadding="3">
+	<tr> <td>Server</td><td><input type="text" size="100" id="server_uri" placeholder="websocket url" value="ws://localhost:8080/live#live" /> </td> </tr>
+	<tr> <td>Overrides</td> <td><input type="text" size="48" id="tcurl_override" title="tcUrl override" /> <input type="text" size="64" id="app_override" title="app override" /> </td> </tr>
+	<tr>
+		<td></td>
+		<td>
+			<button type="button" id="button_connect" onclick="doConnect()">Connect</button>
+			<button type="button" id="button_disconnect" onclick="doDisconnect()">Disconnect</button>
+		</td>
+	</tr>
+	<tr>
+		<td>Stream</td>
+		<td>
+			<input type="text" size="40" id="stream_name_override" title="stream name override" value=""/>
+			<button type="button" id="button_play" onclick="doPlay('live')">Play Live</button>
+			<button type="button" id="button_play_vod" onclick="doPlay('vod')">Play Buffered</button>
+			<button type="button" id="button_closestream" onclick="doCloseStream()">Close Stream</button>
+			<input type="checkbox" id="checkbox_tcserver" checked/><label for="checkbox_tcserver"><a href="https://github.com/zenomt/rtmfp-cpp/blob/main/test/tcserver.md">tcserver</a> extras</label>
+		</td>
+	</tr>
+	</table>
+	<hr/>
+</div>
+
+<div style="width: 100%; overflow:hidden;">
+	<canvas id="stats" width="200px" height="105px" style="position: absolute; background-color: rgba(0,0,0,0.5); z-index:2"></canvas>
+	<canvas id="video" style="z-index:1"></canvas>
+</div>
+
+</body>
+</html>
