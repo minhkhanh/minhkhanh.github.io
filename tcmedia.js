@@ -11,7 +11,6 @@ class com_zenomt_TCMediaDecoder {
 		this._lastAudioTimestamp = -Infinity;
 		this._animationFrameRequested = false;
 		this._lastAudioType = -1;
-		this._lastAudioCodec = -1;
 		this._configuredVideoType = -1;
 		this._configuredVideoDescription = undefined;
 		this._audioIsResyncing = false;
@@ -211,24 +210,18 @@ class com_zenomt_TCMediaDecoder {
 
 		const payload = message.subarray(header.payloadOffset);
 
-		if( ((!header.enhanced) && (message[header.consumed] != this._lastAudioType))
-		 || (header.codec != this._lastAudioCodec)
-		 || header.isConfiguration
-		)
+		if((message[header.consumed] != this._lastAudioType) || (com_zenomt_TCMessage.TC_AUDIO_AACPACKET_AUDIO_SPECIFIC_CONFIG == header.aacPacketType))
 		{
 			var config;
-
 			switch(header.codec)
 			{
 			case com_zenomt_TCMessage.TC_AUDIO_CODEC_AAC:
-			case com_zenomt_TCMessage.TC_AUDIO_ENH_CODEC_AAC:
-				if(header.isConfiguration && payload.length)
+				if((com_zenomt_TCMessage.TC_AUDIO_AACPACKET_AUDIO_SPECIFIC_CONFIG == header.aacPacketType) && payload.length)
 					config = { codec:"mp4a.40.2", description:payload };
 				else
 					return;
 				break;
 			case com_zenomt_TCMessage.TC_AUDIO_CODEC_MP3:
-			case com_zenomt_TCMessage.TC_AUDIO_ENH_CODEC_MP3: // TODO: do we need accurate sample rate & channels?
 				config = { codec:"mp3" };
 				break;
 			case com_zenomt_TCMessage.TC_AUDIO_CODEC_G711_MU_LAW:
@@ -238,28 +231,17 @@ class com_zenomt_TCMediaDecoder {
 				config = { codec:"alaw" };
 				break;
 			case com_zenomt_TCMessage.TC_AUDIO_CODEC_DEVICE_SPECIFIC: // Opus? for now.
-			case com_zenomt_TCMessage.TC_AUDIO_ENH_CODEC_OPUS:
-				config = { codec:"opus", sampleRate:48000 }
-				if(header.isConfiguration && payload.length)
-					config.description = payload;
-				break;
-			case com_zenomt_TCMessage.TC_AUDIO_ENH_CODEC_FLAC:
-				if(header.isConfiguration && payload.length)
-					config = { codec:"flac", description:payload };
-				else
-					return;
+				config = { codec:"opus" }
 				break;
 			default:
 				this._lastAudioType = -1;
-				this._lastAudioCodec = -1;
 				return;
 			}
 
-			config.numberOfChannels = config.numberOfChannels ?? header.numberOfChannels ?? 2;
-			config.sampleRate = config.sampleRate ?? header.sampleRate ?? 44100;
+			config.numberOfChannels = header.numberOfChannels;
+			config.sampleRate = header.sampleRate;
 
 			this._lastAudioType = message[header.consumed];
-			this._lastAudioCodec = header.codec;
 
 			try { this._audioDecoder.configure(config); }
 			catch(e) {
@@ -270,7 +252,7 @@ class com_zenomt_TCMediaDecoder {
 
 			this._audioError = false;
 
-			if(header.isConfiguration)
+			if(header.isAAC)
 				return; // this was a config message
 		}
 
@@ -316,7 +298,6 @@ class com_zenomt_TCMediaDecoder {
 
 			if( (com_zenomt_TCMessage.TC_VIDEO_ENH_CODEC_HEVC == header.codec)
 			 || (com_zenomt_TCMessage.TC_VIDEO_CODEC_AVC == header.codec)
-			 || (com_zenomt_TCMessage.TC_VIDEO_ENH_CODEC_AVC == header.codec)
 			)
 				config.description = payload;
 

@@ -81,7 +81,7 @@ async function onConnected(info) {
 	channelStream = await connection.createStream();
 	channelStream.client.onMetaData = function(...args) { console.log("onMetaData", ...args); };
 	mediaDecoder = new com_zenomt_TCMediaDecoder(channelStream);
-	mediaDecoder.drawFramesToCanvas(video);
+	mediaDecoder.drawFramesToCanvas(document.getElementById("video"));
 	mediaDecoder.audioController.onstatus = (e) => console.log("audioController.onstatus", e.detail, e);
 
 	button_play.disabled = false;
@@ -164,7 +164,7 @@ function onLoaded() {
 <div>
 	<h1>Play Stream Demo</h1>
 	<table cellpadding="3">
-	<tr> <td>Server</td><td><input type="text" size="100" id="server_uri" placeholder="websocket url" value="ws://localhost:8080/live#live" /> </td> </tr>
+	<tr> <td>Server</td><td><input type="text" size="100" id="server_uri" placeholder="websocket url" value="ws://0.0.0.0:8000/live" /> </td> </tr>
 	<tr> <td>Overrides</td> <td><input type="text" size="48" id="tcurl_override" title="tcUrl override" /> <input type="text" size="64" id="app_override" title="app override" /> </td> </tr>
 	<tr>
 		<td></td>
