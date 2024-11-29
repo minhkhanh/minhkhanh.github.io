@@ -2,10 +2,29 @@
 <html>
 <body>
 <p>Test play music</p>
-<audio controls autoplay>
-  <source src="music-sample.mp3" type="audio/mpeg">
-Your browser does not support the audio element.
+<audio id="musicPlayer" controls>
+    <source src="music-sample.mp3" type="audio/mpeg">
+    Your browser does not support the audio element.
 </audio>
+
+<script>
+    // Get reference to the audio element
+    const audioElement = document.getElementById('musicPlayer');
+
+    // Function to start music (can be called from Android)
+    function ZMP3_onWebviewStart() {
+        audioElement.play();
+    }
+
+    // Function to stop music (can be called from Android)
+    function ZMP3_onWebviewStop() {
+        audioElement.pause();
+        audioElement.currentTime = 0; // Reset to start of track
+    }
+
+    // Optional: Ensure audio doesn't autoplay by default
+    // audioElement.autoplay = false;
+</script>
 
 <p>Test deeplink</p>
 <ul>
